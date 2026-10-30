@@ -111,26 +111,25 @@ def _output_parent_parser() -> argparse.ArgumentParser:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    output_parent = _output_parent_parser()
-    parser = argparse.ArgumentParser(prog="python -m superpowers_ouroboros", parents=[output_parent])
+    parser = argparse.ArgumentParser(prog="python -m superpowers_ouroboros", parents=[_output_parent_parser()])
     parser.set_defaults(output_dir=None)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    list_p = sub.add_parser("list", parents=[output_parent], help="List pinned upstream Superpowers skills and command mappings")
+    list_p = sub.add_parser("list", parents=[_output_parent_parser()], help="List pinned upstream Superpowers skills and command mappings")
     list_p.set_defaults(func=cmd_list)
 
-    inspect_p = sub.add_parser("inspect", parents=[output_parent], help="Inspect one Superpowers skill mapping")
+    inspect_p = sub.add_parser("inspect", parents=[_output_parent_parser()], help="Inspect one Superpowers skill mapping")
     inspect_p.add_argument("skill")
     inspect_p.set_defaults(func=cmd_inspect)
 
-    prep_p = sub.add_parser("prepare-handoff", parents=[output_parent], help="Prepare an Ouroboros-native handoff for a skill")
+    prep_p = sub.add_parser("prepare-handoff", parents=[_output_parent_parser()], help="Prepare an Ouroboros-native handoff for a skill")
     prep_p.add_argument("skill")
     prep_p.add_argument("--goal", default="")
     prep_p.add_argument("--input", default="")
     prep_p.add_argument("--invoked-by", default="direct", choices=["direct", "handoff", "auto", "team"])
     prep_p.set_defaults(func=cmd_prepare_handoff)
 
-    run_p = sub.add_parser("run", parents=[output_parent], help="v0 safe run alias: prepare handoff without executing destructive actions")
+    run_p = sub.add_parser("run", parents=[_output_parent_parser()], help="v0 safe run alias: prepare handoff without executing destructive actions")
     run_p.add_argument("skill")
     run_p.add_argument("--goal", default="")
     run_p.add_argument("--input", default="")
@@ -138,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.set_defaults(func=cmd_prepare_handoff)
 
     for skill in discover_skills():
-        skill_p = sub.add_parser(skill.name, parents=[output_parent], help=skill.description[:120] or f"Prepare {skill.name} handoff")
+        skill_p = sub.add_parser(skill.name, parents=[_output_parent_parser()], help=skill.description[:120] or f"Prepare {skill.name} handoff")
         skill_p.add_argument("--goal", default="")
         skill_p.add_argument("--input", default="")
         skill_p.add_argument("--invoked-by", default="direct", choices=["direct", "handoff", "auto", "team"])

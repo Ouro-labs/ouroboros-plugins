@@ -202,6 +202,24 @@ class SuperpowersPluginTests(unittest.TestCase):
             self.assertTrue(run_dir.is_relative_to((out / "runs").resolve()))
             self.assertFalse(run_dir.is_relative_to(PLUGIN_PATH.resolve()))
 
+    def test_output_priority_and_subcommand_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = {"OUROBOROS_PLUGIN_OUTPUT_DIR": str(root / "env-output"),
+                   "OUROBOROS_PLUGIN_WORKDIR": str(root / "workdir")}
+            cases = [
+                (("list",), root / "env-output", env),
+                (("--output-dir", str(root / "before"), "list"), root / "before", env),
+                (("--output-dir", str(root / "before"), "list", "--output-dir", str(root / "after")), root / "after", env),
+                (("list",), root / "workdir" / ".omx" / "superpowers", {**env, "OUROBOROS_PLUGIN_OUTPUT_DIR": ""}),
+                (("list",), root / ".omx" / "superpowers", {"OUROBOROS_PLUGIN_OUTPUT_DIR": "", "OUROBOROS_PLUGIN_WORKDIR": ""}),
+            ]
+            for argv, expected, variables in cases:
+                with self.subTest(argv=argv, expected=expected):
+                    proc = self._run(*argv, cwd=root, env=variables)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(Path(json.loads(proc.stdout)["skill_index_path"]).parent, expected)
+
     def test_unknown_skill_is_rejected(self):
         proc = self._run("inspect", "not-a-skill")
         self.assertEqual(proc.returncode, 2)
