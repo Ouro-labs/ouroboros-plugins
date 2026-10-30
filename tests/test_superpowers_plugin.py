@@ -36,11 +36,16 @@ EXPECTED_SKILLS = {
 
 
 class SuperpowersPluginTests(unittest.TestCase):
-    def _run(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    def _run(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, "-m", "superpowers_ouroboros", *args],
             cwd=cwd or REPO,
-            env={**os.environ, "PYTHONPATH": str(PLUGIN_PATH)},
+            env={**os.environ, "PYTHONPATH": str(PLUGIN_PATH), **(env or {})},
             capture_output=True,
             text=True,
             check=False,
@@ -142,6 +147,78 @@ class SuperpowersPluginTests(unittest.TestCase):
         self.assertIn("Destructive upstream actions are report-only in v0", handoff)
         self.assertIn("no merge, push, branch deletion, discard, or PR mutation", handoff)
         self.assertTrue(all(permission["risk"] != "destructive" for permission in invocation["planned_permissions"]))
+
+    def test_dispatch_style_output_dir_after_subcommand_is_accepted(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "dispatch-output"
+            proc = self._run(
+                "test-driven-development",
+                "--output-dir",
+                str(out),
+                "--goal",
+                "Add retry behavior",
+                "--input",
+                "network client",
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            run_dir = Path(payload["run_dir"])
+            self.assertTrue(run_dir.is_dir())
+            self.assertTrue(run_dir.is_relative_to((out / "runs").resolve()))
+            self.assertTrue((run_dir / "handoff.md").is_file())
+
+    def test_default_output_dir_avoids_plugin_home_when_dispatched_from_install_tree(self):
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td) / "home"
+            home.mkdir()
+            proc = self._run(
+                "test-driven-development",
+                "--goal",
+                "Add retry behavior",
+                cwd=PLUGIN_PATH,
+                env={"HOME": str(home)},
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            run_dir = Path(payload["run_dir"])
+            self.assertFalse(run_dir.is_relative_to(PLUGIN_PATH.resolve()))
+            expected_root = home / ".ouroboros" / "plugin-artifacts" / "superpowers" / "runs"
+            self.assertTrue(run_dir.is_relative_to(expected_root.resolve()))
+            self.assertTrue((run_dir / "audit.jsonl").is_file())
+
+    def test_dispatcher_output_env_selects_workspace_artifact_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "runtime-output"
+            proc = self._run(
+                "verification-before-completion",
+                "--goal",
+                "Verify retry behavior",
+                cwd=PLUGIN_PATH,
+                env={"OUROBOROS_PLUGIN_OUTPUT_DIR": str(out)},
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            run_dir = Path(payload["run_dir"])
+            self.assertTrue(run_dir.is_relative_to((out / "runs").resolve()))
+            self.assertFalse(run_dir.is_relative_to(PLUGIN_PATH.resolve()))
+
+    def test_output_priority_and_subcommand_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            env = {"OUROBOROS_PLUGIN_OUTPUT_DIR": str(root / "env-output"),
+                   "OUROBOROS_PLUGIN_WORKDIR": str(root / "workdir")}
+            cases = [
+                (("list",), root / "env-output", env),
+                (("--output-dir", str(root / "before"), "list"), root / "before", env),
+                (("--output-dir", str(root / "before"), "list", "--output-dir", str(root / "after")), root / "after", env),
+                (("list",), root / "workdir" / ".omx" / "superpowers", {**env, "OUROBOROS_PLUGIN_OUTPUT_DIR": ""}),
+                (("list",), root / ".omx" / "superpowers", {"OUROBOROS_PLUGIN_OUTPUT_DIR": "", "OUROBOROS_PLUGIN_WORKDIR": ""}),
+            ]
+            for argv, expected, variables in cases:
+                with self.subTest(argv=argv, expected=expected):
+                    proc = self._run(*argv, cwd=root, env=variables)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(Path(json.loads(proc.stdout)["skill_index_path"]).parent, expected)
 
     def test_unknown_skill_is_rejected(self):
         proc = self._run("inspect", "not-a-skill")

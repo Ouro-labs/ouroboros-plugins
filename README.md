@@ -1,6 +1,8 @@
 # Ouroboros Plugins
 
-UserLevel plugin ecosystem for Ouroboros.
+23 reference plugins <!-- maintainers: this count = `ls plugins/ | wc -l`; update it when adding/removing plugins --> for [Ouroboros](https://github.com/Q00/ouroboros), the Agent OS — autoresearch, github-pr-ops, guardrails-eval, langfuse-observability and more — plus the UserLevel plugin contract they are built against. Plugins compose the core's stable primitives into domain-specific workflows.
+
+New here? Install Ouroboros itself first — the [main repo's README](https://github.com/Q00/ouroboros#readme) covers install and setup. This repository is where the UserLevel plugin contract and reference plugin packages live.
 
 Ouroboros core should provide stable OS primitives. Plugins and first-party
 programs compose those primitives into domain-specific workflows.
