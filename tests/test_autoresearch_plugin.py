@@ -98,6 +98,30 @@ class AutoresearchPluginTests(unittest.TestCase):
                     2,
                 )
 
+    def test_one_experiment_budget_is_baseline_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in ("program.md", "prepare.py", "train.py"):
+                (root / name).write_text("must not execute")
+            proc = self._run(
+                "prepare",
+                str(root),
+                "--goal",
+                "Measure the baseline",
+                "--max-experiments",
+                "1",
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            payload = json.loads(proc.stdout)
+            contract = payload["ooo_auto"]["autoresearch_contract"]
+            self.assertEqual(contract["experiment_budget"], 1)
+            self.assertTrue(contract["validity_rules"]["baseline_only_allowed"])
+            self.assertEqual(
+                [c["name"] for c in contract["candidate_sequence"]], ["baseline"]
+            )
+            for key in ("seed_path", "auto_goal_path"):
+                self.assertNotIn("Experiments 2-1", Path(payload[key]).read_text())
+
     def test_inspect_reports_ready_checkout(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

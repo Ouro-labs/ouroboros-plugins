@@ -171,6 +171,7 @@ def build_autoresearch_contract(
             "stderr": "no traceback",
             "metric_required": True,
             "baseline_required": True,
+            "baseline_only_allowed": max_experiments == 1,
             "comparison_rule": "lower primary_metric is better; keep only meaningful improvements over baseline.",
         },
         "verification_plan": {
@@ -185,7 +186,11 @@ def build_autoresearch_contract(
                 f"Enforce a {experiment_seconds}-second timeout for each experiment via the harness/orchestrator, without changing the command string.",
                 f"Parse `{metric}` from output, using `best_{metric}` only as the legacy JSON fallback.",
                 "Record every attempted experiment in the configured ledger path.",
-                "Attempt experiments 2 through the configured budget as concrete editable-file candidate changes; a baseline-only rerun or policy-inspection report is not sufficient.",
+                (
+                    "Attempt experiments 2 through the configured budget as concrete editable-file candidate changes; a baseline-only rerun or policy-inspection report is not sufficient."
+                    if max_experiments > 1
+                    else "The one-experiment budget permits only the unmodified baseline; report its measured metric without claiming an improvement."
+                ),
                 f"Report baseline `{metric}`, final best `{metric}`, and whether the best result improved.",
             ],
             "invalid_run_behavior": [
@@ -370,11 +375,19 @@ def build_seed_markdown(
         "## Experiment Plan",
         "",
         f"- Experiment 1 is the unmodified baseline run: `{train_command}`. It counts against the {max_experiments}-experiment budget.",
-        f"- Experiments 2-{max_experiments} may edit `{target_rel}` only and should test concrete candidate changes or decision branches from `{program_rel}`.",
+        (
+            f"- Experiments 2-{max_experiments} may edit `{target_rel}` only and should test concrete candidate changes or decision branches from `{program_rel}`."
+            if max_experiments > 1
+            else "- The one-experiment budget permits only the unmodified baseline; do not edit candidate files or claim an improvement."
+        ),
         f"- After each experiment, record the command, changed files, observed `{metric}`, and conclusion before choosing the next candidate.",
         f"- A candidate succeeds only if its best observed `{metric}` is strictly lower than the baseline by a meaningful margin.",
         f"- If the verification output is JSON, treat a top-level `{metric}` key as primary; `best_{metric}` may be used as a fallback for legacy scripts.",
-        "- During execution, a baseline-only rerun or policy-inspection report is not sufficient; run or explicitly reject each planned candidate with measured evidence.",
+        (
+            "- During execution, a baseline-only rerun or policy-inspection report is not sufficient; run or explicitly reject each planned candidate with measured evidence."
+            if max_experiments > 1
+            else "- Execution reports the measured baseline and stops after one experiment."
+        ),
         "",
         "## Authoritative Autoresearch Contract",
         "",
@@ -410,7 +423,11 @@ def build_seed_markdown(
         f"- The final result reports the best observed `{metric}` and the baseline value if available.",
         f"- Every planned candidate experiment records command, changed files, observed `{metric}`, and conclusion.",
         f"- The final report compares baseline `{metric}` against final best `{metric}` and states whether the best result improved.",
-        "- A baseline-only rerun or validation-only report fails the research execution.",
+        (
+            "- A baseline-only rerun or validation-only report fails the research execution."
+            if max_experiments > 1
+            else "- A measured baseline-only report satisfies the one-experiment budget; a validation-only report does not."
+        ),
         f"- The final patch is limited to `{target_rel}` unless the user authorized wider scope in the ledger.",
         "- Experiment 1 is an unmodified baseline run and any improvement is compared against that baseline.",
         f"- The final verification command exits 0 and emits parseable `{metric}` or `best_{metric}` output.",
@@ -465,7 +482,11 @@ def build_auto_goal(
             f"- Verification command: `{train_command}`.",
             f"- Apply the {experiment_seconds}-second timeout as a separate execution budget; do not rewrite the command into a shell-specific timeout wrapper.",
             f"- Experiment 1 must be an unmodified baseline run and counts against the {max_experiments}-experiment budget.",
-            f"- Experiments 2-{max_experiments} must be concrete candidate changes or decision branches inside `{target_rel}`.",
+            (
+                f"- Experiments 2-{max_experiments} must be concrete candidate changes or decision branches inside `{target_rel}`."
+                if max_experiments > 1
+                else "- The one-experiment budget permits only the unmodified baseline; do not edit candidate files or claim an improvement."
+            ),
             f"- Include top-level non_goals: do not change datasets, splits, metric code, `{support_rel}`, external services, credentials, deployment, or frameworks.",
             f"- Include runtime_context: run from `{inspection.root}` with `{train_command}` and keep artifacts local.",
             "- Include seed_artifact_policy: `seed.md` is only the plugin handoff brief, saved Seed paths are runtime-owned, and repo-local Seed YAML outputs are not required.",
