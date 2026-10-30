@@ -21,6 +21,24 @@
           "type": "path",
           "required": true,
           "description": "Path to a local autoresearch-compatible repository."
+        },
+        {
+          "name": "program_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the autoresearch program brief (default: program.md)."
+        },
+        {
+          "name": "target_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the editable training target (default: train.py)."
+        },
+        {
+          "name": "support_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the fixed support/preparation file (default: prepare.py)."
         }
       ]
     },
@@ -43,6 +61,48 @@
           "type": "string",
           "required": true,
           "description": "Research objective to pass into ooo auto as the Seed goal."
+        },
+        {
+          "name": "program_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the autoresearch program brief (default: program.md)."
+        },
+        {
+          "name": "target_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the editable training target (default: train.py)."
+        },
+        {
+          "name": "support_file",
+          "type": "path",
+          "required": false,
+          "description": "Repository-relative path to the fixed support/preparation file (default: prepare.py)."
+        },
+        {
+          "name": "metric",
+          "type": "string",
+          "required": false,
+          "description": "Primary comparison metric to optimize and report (default: val_bpb)."
+        },
+        {
+          "name": "max_experiments",
+          "type": "integer",
+          "required": false,
+          "description": "Maximum number of experiments to include in the handoff budget (default: 8)."
+        },
+        {
+          "name": "experiment_seconds",
+          "type": "integer",
+          "required": false,
+          "description": "Per-experiment wall-clock budget in seconds (default: 300)."
+        },
+        {
+          "name": "train_command",
+          "type": "string",
+          "required": false,
+          "description": "Verification command agents should run for each experiment (default: uv run train.py)."
         }
       ]
     }
