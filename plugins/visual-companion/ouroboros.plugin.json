@@ -1,0 +1,168 @@
+{
+  "schema_version": "0.1",
+  "name": "visual-companion",
+  "version": "0.1.0",
+  "description": "Browser-based visual question I/O bridge for Ouroboros workflows.",
+  "source": {
+    "type": "local_path",
+    "path": "plugins/visual-companion"
+  },
+  "commands": [
+    {
+      "namespace": "visual-companion",
+      "name": "start",
+      "summary": "Start a local visual companion browser server and return session connection info.",
+      "usage": "ooo visual-companion start --project-dir <path>",
+      "risk": "write",
+      "requires_confirmation": false,
+      "arguments": [
+        {
+          "name": "project_dir",
+          "type": "path",
+          "required": false,
+          "description": "Project directory where .brainstorm session files should persist."
+        }
+      ]
+    },
+    {
+      "namespace": "visual-companion",
+      "name": "show",
+      "summary": "Publish an agent-authored HTML screen into an active visual companion session.",
+      "usage": "ooo visual-companion show --html <path> --state-dir <path>",
+      "risk": "write",
+      "requires_confirmation": false,
+      "arguments": [
+        {
+          "name": "html",
+          "type": "path",
+          "required": true,
+          "description": "HTML fragment or document to show in the browser."
+        },
+        {
+          "name": "state_dir",
+          "type": "path",
+          "required": false,
+          "description": "State directory returned by start."
+        }
+      ]
+    },
+    {
+      "namespace": "visual-companion",
+      "name": "wait",
+      "summary": "Wait for the next browser click or form event and return it as JSON.",
+      "usage": "ooo visual-companion wait --state-dir <path> [--timeout-ms <n>]",
+      "risk": "read_only",
+      "requires_confirmation": false,
+      "arguments": [
+        {
+          "name": "state_dir",
+          "type": "path",
+          "required": false,
+          "description": "State directory returned by start."
+        },
+        {
+          "name": "timeout_ms",
+          "type": "integer",
+          "required": false,
+          "description": "Maximum time to wait for a browser event."
+        }
+      ]
+    },
+    {
+      "namespace": "visual-companion",
+      "name": "read",
+      "summary": "Recover the latest pending durable browser event without blocking.",
+      "usage": "ooo visual-companion read --state-dir <path>",
+      "risk": "read_only",
+      "requires_confirmation": false,
+      "arguments": [
+        {
+          "name": "state_dir",
+          "type": "path",
+          "required": false,
+          "description": "State directory returned by start."
+        }
+      ]
+    },
+    {
+      "namespace": "visual-companion",
+      "name": "stop",
+      "summary": "Stop a visual companion session and record the lifecycle result.",
+      "usage": "ooo visual-companion stop --session-dir <path>",
+      "risk": "write",
+      "requires_confirmation": false,
+      "arguments": [
+        {
+          "name": "session_dir",
+          "type": "path",
+          "required": false,
+          "description": "Session directory containing content and state directories."
+        }
+      ]
+    }
+  ],
+  "capabilities": [
+    {
+      "name": "ledger",
+      "access": "write",
+      "reason": "Record visual question lifecycle, event results, and blocked states."
+    },
+    {
+      "name": "state",
+      "access": "write",
+      "reason": "Persist visual companion session metadata and event recovery state."
+    },
+    {
+      "name": "provenance",
+      "access": "write",
+      "reason": "Record bundled skill source, copied assets, command arguments, and generated artifacts."
+    },
+    {
+      "name": "runtime",
+      "access": "execute",
+      "reason": "Start and stop the bundled local Node browser server."
+    },
+    {
+      "name": "handoff",
+      "access": "attach",
+      "reason": "Attach browser URL, screen files, events, diagnostics, and session results to downstream workflows."
+    },
+    {
+      "name": "progress",
+      "access": "write",
+      "reason": "Report session lifecycle and wait/read progress."
+    }
+  ],
+  "permissions": [
+    {
+      "scope": "filesystem:read",
+      "risk": "read_only",
+      "required": true,
+      "reason": "Read bundled scripts, input HTML, and existing visual companion session state."
+    },
+    {
+      "scope": "filesystem:write",
+      "risk": "write",
+      "required": true,
+      "reason": "Write screen files, session metadata, event state, diagnostics, and handoff artifacts."
+    },
+    {
+      "scope": "shell:execute",
+      "risk": "write",
+      "required": true,
+      "reason": "Execute the bundled Node scripts that serve screens and wait for browser events."
+    }
+  ],
+  "entrypoint": {
+    "type": "command",
+    "command": "python -m visual_companion_plugin"
+  },
+  "audit": {
+    "events": [
+      "plugin.invoked",
+      "plugin.permission_used",
+      "plugin.completed",
+      "plugin.failed"
+    ]
+  }
+}

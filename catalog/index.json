@@ -92,6 +92,12 @@
       "description": "AgentOS/Ouroboros adapter for Vercel Agent Skills."
     },
     {
+      "name": "visual-companion",
+      "version": "0.1.0",
+      "path": "../plugins/visual-companion",
+      "description": "Browser-based visual question I/O bridge for Ouroboros workflows."
+    },
+    {
       "name": "target-capabilities",
       "version": "0.1.0",
       "path": "../plugins/target-capabilities",
