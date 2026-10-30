@@ -28,6 +28,7 @@ L1_RESULT='BLOCKED: ouroboros CLI unavailable'
 L2_RESULT='NOT RUN'
 L3_RESULT='NOT RUN: inference disabled; --skip-run still invokes models'
 PLUGIN_HOME="$WORKTREE/plugins/superpowers"
+export TRUST_AUDIT_REQUIRED=0
 if command -v ouroboros >/dev/null 2>&1; then
   ouroboros --version >> "$EVIDENCE_ROOT/environment.txt"
   run_logged "$EVIDENCE_ROOT/plugin-add.log" ouroboros plugin add . --plugin superpowers \
@@ -38,6 +39,7 @@ if command -v ouroboros >/dev/null 2>&1; then
   run_logged "$EVIDENCE_ROOT/plugin-trust.log" ouroboros plugin trust superpowers \
     --scope filesystem:read --scope filesystem:write --lockfile "$EVIDENCE_ROOT/plugins.lock" \
     --trust-root "$EVIDENCE_ROOT/trust-root" --audit-log "$EVIDENCE_ROOT/trust-audit.jsonl" --granted-by user:issue28-verify
+  TRUST_AUDIT_REQUIRED=1
   run_logged "$EVIDENCE_ROOT/inspect-after.log" ouroboros plugin inspect superpowers --lockfile "$EVIDENCE_ROOT/plugins.lock" --trust-root "$EVIDENCE_ROOT/trust-root"
   run_logged "$EVIDENCE_ROOT/plugin-list.log" ouroboros plugin list --lockfile "$EVIDENCE_ROOT/plugins.lock" --trust-root "$EVIDENCE_ROOT/trust-root" --json
   PLUGIN_HOME="$EVIDENCE_ROOT/plugin-home/superpowers"
@@ -78,6 +80,8 @@ for output in outputs:
         assert 'Destructive upstream actions are report-only' in (run / 'handoff.md').read_text()
     print('PASS artifacts, audit, provenance, bounded invocation:', output.name)
 trust = root / 'trust-audit.jsonl'
+if os.environ['TRUST_AUDIT_REQUIRED'] == '1':
+    assert trust.is_file(), 'missing trust audit after successful plugin trust'
 if trust.exists():
     events = [json.loads(line) for line in trust.read_text().splitlines() if line.strip()]
     assert events, 'empty trust audit is not evidence'
