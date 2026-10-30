@@ -198,7 +198,15 @@ function handleRequest(req, res) {
   } else if (req.method === 'GET' && req.url.startsWith('/files/')) {
     const fileName = req.url.slice(7);
     const filePath = path.join(CONTENT_DIR, path.basename(fileName));
-    if (!fs.existsSync(filePath)) {
+    let content;
+    try {
+      if (!fs.statSync(filePath).isFile()) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+      content = fs.readFileSync(filePath);
+    } catch {
       res.writeHead(404);
       res.end('Not found');
       return;
@@ -206,7 +214,7 @@ function handleRequest(req, res) {
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': contentType });
-    res.end(fs.readFileSync(filePath));
+    res.end(content);
   } else {
     res.writeHead(404);
     res.end('Not found');
@@ -441,6 +449,11 @@ function startServer() {
   );
 
   const server = http.createServer(handleRequest);
+  const connections = new Set();
+  server.on('connection', (socket) => {
+    connections.add(socket);
+    socket.on('close', () => connections.delete(socket));
+  });
   server.on('upgrade', handleUpgrade);
 
   const watcher = fs.watch(CONTENT_DIR, (eventType, filename) => {
@@ -472,20 +485,22 @@ function startServer() {
   function shutdown(reason) {
     if (stopping) return;
     stopping = true;
-    console.log(JSON.stringify({ type: 'server-stopped', reason }));
-    const infoFile = path.join(STATE_DIR, 'server-info');
-    if (fs.existsSync(infoFile)) fs.unlinkSync(infoFile);
-    fs.writeFileSync(
-      path.join(STATE_DIR, 'server-stopped'),
-      JSON.stringify({ reason, timestamp: Date.now() }) + '\n'
-    );
     watcher.close();
     for (const timer of debounceTimers.values()) clearTimeout(timer);
-    for (const socket of clients) socket.destroy();
-    const pidFile = path.join(STATE_DIR, 'server.pid');
-    if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile);
     clearInterval(lifecycleCheck);
-    server.close(() => process.exit(0));
+    server.close(() => {
+      const infoFile = path.join(STATE_DIR, 'server-info');
+      if (fs.existsSync(infoFile)) fs.unlinkSync(infoFile);
+      const pidFile = path.join(STATE_DIR, 'server.pid');
+      if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile);
+      fs.writeFileSync(
+        path.join(STATE_DIR, 'server-stopped'),
+        JSON.stringify({ reason, timestamp: Date.now() }) + '\n'
+      );
+      console.log(JSON.stringify({ type: 'server-stopped', reason }));
+      process.exit(0);
+    });
+    for (const socket of connections) socket.destroy();
   }
 
   stopServer = shutdown;
