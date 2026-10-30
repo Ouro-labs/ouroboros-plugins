@@ -74,15 +74,65 @@ class AutoresearchPluginTests(unittest.TestCase):
             self.assertIn("Find a smaller validation bpb.", seed)
             self.assertIn("Run at most 2 experiments.", seed)
             self.assertIn("Keep each experiment bounded to 60 seconds.", seed)
+            self.assertIn("## Experiment Plan", seed)
+            self.assertIn("Experiment 1 is the unmodified baseline run", seed)
+            self.assertIn("## Authoritative Autoresearch Contract", seed)
+            self.assertIn('"repository":', seed)
+            self.assertIn('"candidate_sequence":', seed)
+            self.assertIn('"name": "baseline"', seed)
+            self.assertIn('"name": "additive-smoothing"', seed)
+            self.assertIn('"non_goals":', seed)
+            self.assertIn('"runtime_context":', seed)
+            self.assertIn('"validity_rules":', seed)
+            self.assertIn('"verification_plan":', seed)
+            self.assertIn('"execution_command":', seed)
+            self.assertIn('"seed_artifact_policy":', seed)
+            self.assertIn('"saved_seed_path_runtime_owned": true', seed)
+            self.assertIn("normal Ouroboros YAML/Seed serialization", seed)
+            self.assertIn("Do not create or require `.ouroboros/autoresearch/seed.yaml`", seed)
+            self.assertIn("must not be declared as a target-repository output", seed)
+            self.assertIn("keep the command string exactly `uv run train.py`", seed)
+            self.assertIn("baseline-only rerun", seed)
+            self.assertIn("final best", seed)
+            self.assertIn("plugin-owned extra fields for autoresearch-specific values", seed)
+            self.assertIn("## Non-Goals", seed)
+            self.assertIn("## Runtime Context", seed)
             self.assertIn("`prepare.py` as fixed data prep", seed)
             self.assertIn("````markdown", seed)
             self.assertIn("Use the prepared autoresearch handoff brief", auto_goal)
+            self.assertIn("Experiments 2-2 must be concrete candidate changes", auto_goal)
+            self.assertIn("Include top-level non_goals", auto_goal)
+            self.assertIn("Include runtime_context", auto_goal)
+            self.assertIn("Include seed_artifact_policy", auto_goal)
+            self.assertIn("Do not declare top-level `seed_artifact_path`", auto_goal)
+            self.assertIn("do not rewrite the command into a shell-specific timeout wrapper", auto_goal)
             self.assertIn("Do not run training during Seed creation", auto_goal)
+            self.assertIn("Authoritative autoresearch_contract JSON follows", auto_goal)
+            self.assertIn("plugin-owned extra fields for autoresearch-specific values", auto_goal)
+            self.assertIn('"experiment_budget":2', auto_goal)
+            self.assertIn('"legacy_json_fallback":"best_val_bpb"', auto_goal)
+            self.assertIn('"repo_local_seed_output_required":false', auto_goal)
+            self.assertIn('"verification_plan":', auto_goal)
+            self.assertIn("normal Ouroboros YAML/Seed serialization", auto_goal)
+            self.assertIn("baseline-only rerun", auto_goal)
             self.assertEqual(handoff, payload)
             self.assertIn("ouroboros auto \"$(cat", payload["ooo_auto"]["recommended_command"])
             self.assertIn("autoresearch path with spaces", payload["ooo_auto"]["recommended_command"])
             self.assertIn("'", payload["ooo_auto"]["recommended_command"])
             self.assertEqual(payload["ooo_auto"]["editable_files"], ["train.py"])
+            self.assertEqual(
+                payload["ooo_auto"]["autoresearch_contract"]["candidate_sequence"][0]["name"],
+                "baseline",
+            )
+            self.assertEqual(
+                payload["ooo_auto"]["autoresearch_contract"]["candidate_sequence"][1]["name"],
+                "additive-smoothing",
+            )
+            self.assertFalse(
+                payload["ooo_auto"]["autoresearch_contract"]["seed_artifact_policy"][
+                    "repo_local_seed_output_required"
+                ]
+            )
 
     def test_prepare_requires_autoresearch_files(self):
         with tempfile.TemporaryDirectory() as td:

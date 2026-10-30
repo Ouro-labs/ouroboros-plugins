@@ -1,0 +1,4 @@
+.ouroboros/
+artifacts/
+__pycache__/
+*.pyc

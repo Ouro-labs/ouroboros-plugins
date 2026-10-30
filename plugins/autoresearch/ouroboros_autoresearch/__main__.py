@@ -24,6 +24,178 @@ DEFAULT_TRAIN_COMMAND = "uv run train.py"
 ARTIFACT_DIR = Path(".ouroboros") / PLUGIN_NAME
 
 
+def candidate_sequence(
+    *,
+    max_experiments: int,
+    train_command: str,
+) -> list[dict[str, object]]:
+    candidates: list[dict[str, object]] = [
+        {
+            "id": 1,
+            "name": "baseline",
+            "train_py_change": "none",
+            "command": train_command,
+            "purpose": "Measure the unmodified starting point before any edits.",
+        },
+        {
+            "id": 2,
+            "name": "additive-smoothing",
+            "train_py_change": "Tune additive smoothing values in the probability model.",
+            "purpose": "Test whether less or more smoothing improves validation bpb.",
+        },
+        {
+            "id": 3,
+            "name": "unigram-bigram-interpolation",
+            "train_py_change": "Tune interpolation weights between unigram and bigram probabilities.",
+            "purpose": "Test a more calibrated local-context mixture.",
+        },
+        {
+            "id": 4,
+            "name": "trigram-component",
+            "train_py_change": "Add a small trigram component with conservative backoff.",
+            "purpose": "Test whether a longer context improves the fixed validation metric.",
+        },
+        {
+            "id": 5,
+            "name": "unseen-context-backoff",
+            "train_py_change": "Improve fallback behavior for unseen or sparse contexts.",
+            "purpose": "Reduce overconfident estimates on sparse n-gram rows.",
+        },
+        {
+            "id": 6,
+            "name": "best-combined-configuration",
+            "train_py_change": "Combine only changes that individually improved validation bpb.",
+            "purpose": "Verify that the best pieces compose without degrading the metric.",
+        },
+    ]
+    if max_experiments <= len(candidates):
+        return candidates[:max_experiments]
+
+    for experiment_id in range(len(candidates) + 1, max_experiments + 1):
+        candidates.append(
+            {
+                "id": experiment_id,
+                "name": f"targeted-ablation-{experiment_id}",
+                "train_py_change": (
+                    "Run one focused ablation derived from the experiment ledger; "
+                    "edit train.py only."
+                ),
+                "purpose": "Use the ledger to test the most promising remaining hypothesis.",
+            }
+        )
+    return candidates
+
+
+def build_autoresearch_contract(
+    inspection: RepoInspection,
+    *,
+    metric: str,
+    max_experiments: int,
+    experiment_seconds: int,
+    train_command: str,
+) -> dict[str, object]:
+    target_rel = display_path(inspection.target_file, inspection.root)
+    program_rel = display_path(inspection.program_file, inspection.root)
+    support_rel = display_path(inspection.support_file, inspection.root)
+    return {
+        "repository": str(inspection.root),
+        "program_path": program_rel,
+        "handoff_brief_path": str(inspection.root / ARTIFACT_DIR / "seed.md"),
+        "editable_files": [target_rel],
+        "fixed_files": [program_rel, support_rel],
+        "primary_metric": metric,
+        "metric_direction": "lower_is_better",
+        "experiment_budget": max_experiments,
+        "timeout_seconds": experiment_seconds,
+        "verification_command": train_command,
+        "execution_command": {
+            "command": train_command,
+            "cwd": str(inspection.root),
+            "timeout_seconds": experiment_seconds,
+            "timeout_policy": (
+                "Apply timeout_seconds in the harness/orchestrator. Do not rewrite "
+                "the command string by prefixing shell-specific timeout wrappers."
+            ),
+        },
+        "seed_artifact_policy": {
+            "handoff_brief_path": str(inspection.root / ARTIFACT_DIR / "seed.md"),
+            "handoff_brief_only": True,
+            "saved_seed_path_runtime_owned": True,
+            "repo_local_seed_output_required": False,
+            "forbidden_repo_local_seed_outputs": [
+                str(ARTIFACT_DIR / "seed.yaml"),
+                str(ARTIFACT_DIR / "generated-seed.yaml"),
+            ],
+        },
+        "candidate_sequence": candidate_sequence(
+            max_experiments=max_experiments,
+            train_command=train_command,
+        ),
+        "non_goals": [
+            "Do not change datasets, splits, metric definitions, or support/runtime utility code.",
+            "Do not edit prepare.py or program.md during experiment execution.",
+            "Do not add external services, network dependencies, credentials, deployment steps, or new frameworks.",
+            "Do not optimize for optimizer, learning-rate, neural training-loop, or regularization changes unless the research program already asks for those.",
+            "Do not change the metric output contract or fabricate reported metric values.",
+        ],
+        "runtime_context": {
+            "cwd": str(inspection.root),
+            "artifacts_local": True,
+            "baseline_counts_against_budget": True,
+            "final_patch_boundary": target_rel,
+        },
+        "metric_fallback": {
+            "primary": metric,
+            "legacy_json_fallback": f"best_{metric}",
+        },
+        "ledger": {
+            "path": str(ARTIFACT_DIR / "experiment-log.md"),
+            "columns": [
+                "experiment_id",
+                "candidate_name",
+                "command",
+                "changed_files",
+                metric,
+                "conclusion",
+            ],
+        },
+        "validity_rules": {
+            "exit_code": 0,
+            "stderr": "no traceback",
+            "metric_required": True,
+            "baseline_required": True,
+            "comparison_rule": "lower primary_metric is better; keep only meaningful improvements over baseline.",
+        },
+        "verification_plan": {
+            "seed_creation": [
+                "Inspect the generated Ouroboros Seed artifact; do not run training while authoring the Seed.",
+                "Confirm the Seed artifact preserves the plugin-owned autoresearch contract as structured Seed data.",
+                "Do not create or require a repository-local Seed YAML such as .ouroboros/autoresearch/seed.yaml or generated-seed.yaml.",
+                "Treat the saved Seed artifact path as owned by the Ouroboros runtime, not by the target repository.",
+            ],
+            "experiment_execution": [
+                f"Run every experiment from the repository root with `{train_command}`.",
+                f"Enforce a {experiment_seconds}-second timeout for each experiment via the harness/orchestrator, without changing the command string.",
+                f"Parse `{metric}` from output, using `best_{metric}` only as the legacy JSON fallback.",
+                "Record every attempted experiment in the configured ledger path.",
+                "Attempt experiments 2 through the configured budget as concrete train.py candidate changes; a baseline-only rerun or policy-inspection report is not sufficient.",
+                f"Report baseline `{metric}`, final best `{metric}`, and whether the best result improved.",
+            ],
+            "invalid_run_behavior": [
+                "Non-zero exit, traceback, timeout, missing metric, changed fixed file, or fabricated metric makes the run invalid.",
+                "Invalid runs are recorded as failed and never counted as improvements.",
+                "If no candidate improves the baseline, the final report must show all planned candidates were attempted or explicitly rejected with measured evidence.",
+            ],
+        },
+        "conflict_resolution": (
+            "This contract is authoritative. If the interview generates optimizer, "
+            "learning-rate, neural training-loop, framework, dataset, split, or "
+            "metric changes, discard them unless they are explicitly present in "
+            "program.md. The probability-model candidate_sequence wins conflicts."
+        ),
+    }
+
+
 @dataclass(frozen=True)
 class RepoInspection:
     root: Path
@@ -139,6 +311,14 @@ def build_seed_markdown(
     program_rel = display_path(inspection.program_file, inspection.root)
     support_rel = display_path(inspection.support_file, inspection.root)
     generated_at = datetime.now(timezone.utc).isoformat()
+    contract = build_autoresearch_contract(
+        inspection,
+        metric=metric,
+        max_experiments=max_experiments,
+        experiment_seconds=experiment_seconds,
+        train_command=train_command,
+    )
+    contract_json = json.dumps(contract, indent=2)
 
     lines = [
         "# Autoresearch Ouroboros Seed",
@@ -153,6 +333,9 @@ def build_seed_markdown(
         "",
         "## Execution Boundary",
         "",
+        "- This Markdown file is the plugin handoff brief. The generated Ouroboros Seed artifact may use the normal Ouroboros YAML/Seed serialization.",
+        "- Do not create or require `.ouroboros/autoresearch/seed.yaml`, `.ouroboros/autoresearch/generated-seed.yaml`, or any other repository-local saved Seed YAML.",
+        "- The saved Seed artifact path is owned by the Ouroboros runtime. It must not be declared as a target-repository output or top-level `seed_artifact_path` requirement.",
         f"- Edit only `{target_rel}` unless the user explicitly widens scope.",
         f"- Treat `{program_rel}` as the research program and product requirements.",
         f"- Treat `{support_rel}` as fixed data prep and runtime utility code.",
@@ -161,6 +344,35 @@ def build_seed_markdown(
         f"- Use `{metric}` as the primary comparison metric.",
         f"- Prefer changes that improve `{metric}` and preserve a reproducible command trail.",
         "",
+        "## Experiment Plan",
+        "",
+        f"- Experiment 1 is the unmodified baseline run: `{train_command}`. It counts against the {max_experiments}-experiment budget.",
+        f"- Experiments 2-{max_experiments} may edit `{target_rel}` only and should test concrete candidate changes or decision branches from `{program_rel}`.",
+        f"- After each experiment, record the command, changed files, observed `{metric}`, and conclusion before choosing the next candidate.",
+        f"- A candidate succeeds only if its best observed `{metric}` is strictly lower than the baseline by a meaningful margin.",
+        f"- If the verification output is JSON, treat a top-level `{metric}` key as primary; `best_{metric}` may be used as a fallback for legacy scripts.",
+        "- During execution, a baseline-only rerun or policy-inspection report is not sufficient; run or explicitly reject each planned candidate with measured evidence.",
+        "",
+        "## Authoritative Autoresearch Contract",
+        "",
+        "Preserve these values as concrete Seed data: use native Seed fields where they fit, and plugin-owned extra fields for autoresearch-specific values. Do not convert them into examples, ontology schema, personas, or optional guidance.",
+        "",
+        *fenced_code_block("json", contract_json),
+        "",
+        "## Non-Goals",
+        "",
+        "- Do not change datasets, data splits, metric definitions, or support/runtime utility code.",
+        "- Do not add external services, network dependencies, credentials, deployment steps, or new frameworks.",
+        "- Do not optimize for any metric other than the primary comparison metric unless the user explicitly widens scope.",
+        "",
+        "## Runtime Context",
+        "",
+        f"- Work from repository root `{inspection.root}`.",
+        f"- Run verification from that root with `{train_command}`.",
+        f"- Apply the {experiment_seconds}-second experiment timeout as a harness/orchestrator budget; keep the command string exactly `{train_command}`.",
+        f"- Keep `{support_rel}` fixed and use it only as support/evaluation infrastructure.",
+        f"- Keep generated experiment artifacts local to the repository unless the user asks for export.",
+        "",
         "## Verification Command",
         "",
         *fenced_code_block("bash", train_command),
@@ -168,8 +380,12 @@ def build_seed_markdown(
         "## Acceptance Criteria",
         "",
         f"- The final result reports the best observed `{metric}` and the baseline value if available.",
-        f"- Every experiment records command, changed files, observed `{metric}`, and conclusion.",
+        f"- Every planned candidate experiment records command, changed files, observed `{metric}`, and conclusion.",
+        f"- The final report compares baseline `{metric}` against final best `{metric}` and states whether the best result improved.",
+        "- A baseline-only rerun or validation-only report fails the research execution.",
         f"- The final patch is limited to `{target_rel}` unless scope was widened in the ledger.",
+        f"- Experiment 1 is an unmodified baseline run and any improvement is compared against that baseline.",
+        f"- The final verification command exits 0 and emits parseable `{metric}` or `best_{metric}` output.",
         "- The run stops when the experiment budget is exhausted or no promising next edit remains.",
         "",
         "## Program Excerpt",
@@ -193,6 +409,14 @@ def build_auto_goal(
     target_rel = display_path(inspection.target_file, inspection.root)
     program_rel = display_path(inspection.program_file, inspection.root)
     support_rel = display_path(inspection.support_file, inspection.root)
+    contract = build_autoresearch_contract(
+        inspection,
+        metric=metric,
+        max_experiments=max_experiments,
+        experiment_seconds=experiment_seconds,
+        train_command=train_command,
+    )
+    contract_json = json.dumps(contract, separators=(",", ":"))
     return "\n".join(
         [
             goal,
@@ -209,7 +433,20 @@ def build_auto_goal(
             f"- Keep each experiment bounded to {experiment_seconds} seconds.",
             f"- Use `{metric}` as the primary metric; lower is better.",
             f"- Verification command: `{train_command}`.",
+            f"- Apply the {experiment_seconds}-second timeout as a separate execution budget; do not rewrite the command into a shell-specific timeout wrapper.",
+            f"- Experiment 1 must be an unmodified baseline run and counts against the {max_experiments}-experiment budget.",
+            f"- Experiments 2-{max_experiments} must be concrete candidate changes or decision branches inside `{target_rel}`.",
+            f"- Include top-level non_goals: do not change datasets, splits, metric code, `{support_rel}`, external services, credentials, deployment, or frameworks.",
+            f"- Include runtime_context: run from `{inspection.root}` with `{train_command}` and keep artifacts local.",
+            "- Include seed_artifact_policy: `seed.md` is only the plugin handoff brief, saved Seed paths are runtime-owned, and repo-local Seed YAML outputs are not required.",
+            "- Do not declare top-level `seed_artifact_path`, `.ouroboros/autoresearch/seed.yaml`, or `.ouroboros/autoresearch/generated-seed.yaml` as required target-repository outputs.",
+            f"- Accept parseable `{metric}` as primary; if output is JSON and only `best_{metric}` exists, treat that as a legacy fallback.",
             "- Do not run training during Seed creation; only prepare the bounded plan unless execution is explicitly requested.",
+            "- The generated Ouroboros Seed artifact may use the normal Ouroboros YAML/Seed serialization. `seed.md` is the plugin handoff brief, not a required output format for auto's saved Seed.",
+            "",
+            "Authoritative autoresearch_contract JSON follows. The generated Seed must preserve these as concrete Seed data, using plugin-owned extra fields for autoresearch-specific values, not merely schema examples:",
+            "",
+            *fenced_code_block("json", contract_json),
             "",
         ]
     )
@@ -272,6 +509,13 @@ def write_handoff(
             "experiment_seconds": experiment_seconds,
             "train_command": train_command,
             "editable_files": [display_path(inspection.target_file, inspection.root)],
+            "autoresearch_contract": build_autoresearch_contract(
+                inspection,
+                metric=metric,
+                max_experiments=max_experiments,
+                experiment_seconds=experiment_seconds,
+                train_command=train_command,
+            ),
         },
     }
     write_text_atomic(handoff_path, json.dumps(handoff, indent=2) + "\n")
