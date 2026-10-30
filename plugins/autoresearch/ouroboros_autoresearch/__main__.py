@@ -28,6 +28,7 @@ def candidate_sequence(
     *,
     max_experiments: int,
     train_command: str,
+    target_file: str = DEFAULT_TARGET_FILE,
 ) -> list[dict[str, object]]:
     candidates: list[dict[str, object]] = [
         {
@@ -78,7 +79,7 @@ def candidate_sequence(
                 "name": f"targeted-ablation-{experiment_id}",
                 "train_py_change": (
                     "Run one focused ablation derived from the experiment ledger; "
-                    "edit train.py only."
+                    f"edit {target_file} only."
                 ),
                 "purpose": "Use the ledger to test the most promising remaining hypothesis.",
             }
@@ -130,14 +131,20 @@ def build_autoresearch_contract(
         "candidate_sequence": candidate_sequence(
             max_experiments=max_experiments,
             train_command=train_command,
+            target_file=target_rel,
         ),
         "non_goals": [
             "Do not change datasets, splits, metric definitions, or support/runtime utility code.",
-            "Do not edit prepare.py or program.md during experiment execution.",
+            f"Do not edit {support_rel} or {program_rel} during experiment execution.",
             "Do not add external services, network dependencies, credentials, deployment steps, or new frameworks.",
             "Do not optimize for optimizer, learning-rate, neural training-loop, or regularization changes unless the research program already asks for those.",
             "Do not change the metric output contract or fabricate reported metric values.",
         ],
+        "seed_creation_policy": {
+            "training_allowed": False,
+            "execution_requires_explicit_request": True,
+            "scope_expansion_requires_user_authorization": True,
+        },
         "runtime_context": {
             "cwd": str(inspection.root),
             "artifacts_local": True,
@@ -178,7 +185,7 @@ def build_autoresearch_contract(
                 f"Enforce a {experiment_seconds}-second timeout for each experiment via the harness/orchestrator, without changing the command string.",
                 f"Parse `{metric}` from output, using `best_{metric}` only as the legacy JSON fallback.",
                 "Record every attempted experiment in the configured ledger path.",
-                "Attempt experiments 2 through the configured budget as concrete train.py candidate changes; a baseline-only rerun or policy-inspection report is not sufficient.",
+                "Attempt experiments 2 through the configured budget as concrete editable-file candidate changes; a baseline-only rerun or policy-inspection report is not sufficient.",
                 f"Report baseline `{metric}`, final best `{metric}`, and whether the best result improved.",
             ],
             "invalid_run_behavior": [
@@ -355,7 +362,7 @@ def build_seed_markdown(
         "## Non-Goals",
         "",
         f"- Do not edit `{support_rel}`.",
-        f"- Do not edit files outside `{target_rel}` unless the ledger explicitly widens scope.",
+        f"- Do not edit files outside `{target_rel}` unless the user explicitly authorizes wider scope in the ledger.",
         "- Do not install new dependencies or change package metadata.",
         "- Do not change the evaluation harness or primary metric.",
         "- Do not run training during Seed creation; only plan the bounded loop until execution is explicitly requested.",
@@ -387,7 +394,7 @@ def build_seed_markdown(
         f"- Run verification from that root with `{train_command}`.",
         f"- Apply the {experiment_seconds}-second experiment timeout as a harness/orchestrator budget; keep the command string exactly `{train_command}`.",
         f"- Keep `{support_rel}` fixed and use it only as support/evaluation infrastructure.",
-        f"- Keep generated experiment artifacts local to the repository unless the user asks for export.",
+        "- Keep generated experiment artifacts local to the repository unless the user asks for export.",
         "",
         "## Verification Command",
         "",
@@ -404,10 +411,10 @@ def build_seed_markdown(
         f"- Every planned candidate experiment records command, changed files, observed `{metric}`, and conclusion.",
         f"- The final report compares baseline `{metric}` against final best `{metric}` and states whether the best result improved.",
         "- A baseline-only rerun or validation-only report fails the research execution.",
-        f"- The final patch is limited to `{target_rel}` unless scope was widened in the ledger.",
-        f"- Experiment 1 is an unmodified baseline run and any improvement is compared against that baseline.",
+        f"- The final patch is limited to `{target_rel}` unless the user authorized wider scope in the ledger.",
+        "- Experiment 1 is an unmodified baseline run and any improvement is compared against that baseline.",
         f"- The final verification command exits 0 and emits parseable `{metric}` or `best_{metric}` output.",
-        f"- The final kept patch is limited to `{target_rel}` unless scope was widened in the ledger.",
+        f"- The final kept patch is limited to `{target_rel}` unless the user authorized wider scope in the ledger.",
         f"- The run stops when {max_experiments} experiments have been attempted or no promising reversible `{target_rel}` change remains.",
         "",
         "## Program Excerpt",
@@ -449,7 +456,7 @@ def build_auto_goal(
             "Concrete constraints for the generated Ouroboros Seed:",
             f"- Work in repository: {inspection.root}",
             f"- Treat `{program_rel}` as the research program/instructions.",
-            f"- Edit only `{target_rel}` unless explicitly widening scope in the ledger.",
+            f"- Edit only `{target_rel}` unless the user explicitly authorizes wider scope in the ledger.",
             f"- Treat `{support_rel}` as fixed data prep/runtime utility code.",
             f"- Run at most {max_experiments} experiments.",
             f"- Keep each experiment bounded to {experiment_seconds} seconds.",
@@ -482,7 +489,7 @@ def build_auto_goal(
             "",
             "Non-Goals:",
             f"- Do not edit {support_rel}.",
-            f"- Do not edit files outside {target_rel} unless the ledger explicitly widens scope.",
+            f"- Do not edit files outside {target_rel} unless the user explicitly authorizes wider scope in the ledger.",
             "- Do not install dependencies, change package metadata, or modify the evaluation harness.",
             "- Do not run training during Seed creation.",
             "",
@@ -491,7 +498,7 @@ def build_auto_goal(
             f"- Execution, when requested, runs and reports a baseline with {train_command} before evaluating changes.",
             "- Execution evaluates experiments sequentially from the current best commit, keeping improvements and reverting discarded changes before the next attempt.",
             f"- Execution records at most {max_experiments} experiments with command, changed files, diff summary, observed {metric}, memory, status, and keep/discard conclusion.",
-            f"- Final kept changes are limited to {target_rel} unless scope widening is explicitly recorded in the ledger.",
+            f"- Final kept changes are limited to {target_rel} unless user-authorized scope widening is recorded in the ledger.",
             "- Ties, regressions, invalid runs, missing metric output, timeouts, memory-heavy changes, and scope expansions are discarded.",
             "",
             "Seed QA Guardrails:",
