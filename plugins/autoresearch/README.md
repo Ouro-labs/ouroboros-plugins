@@ -52,7 +52,21 @@ ooo auto-research prepare /path/to/autoresearch --goal "Improve validation bpb"
 ```
 
 `inspect` is read-only. It checks that the target checkout has the expected
-`program.md`, `prepare.py`, and `train.py` files.
+`program.md`, `prepare.py`, and `train.py` files. The layout can be adapted for
+compatible forks with repository-relative flags:
+
+- `--program-file` (default: `program.md`)
+- `--target-file` (default: `train.py`)
+- `--support-file` (default: `prepare.py`)
+
+`prepare` accepts the same layout flags and the handoff-budget flags declared in
+`ouroboros.plugin.json`:
+
+- `--goal` (required) — research objective for the Ouroboros handoff
+- `--metric` (default: `val_bpb`) — primary comparison metric
+- `--max-experiments` (default: `8`) — experiment-count budget
+- `--experiment-seconds` (default: `300`) — per-experiment wall-clock budget
+- `--train-command` (default: `uv run train.py`) — verification command
 
 `prepare` writes:
 
@@ -131,7 +145,7 @@ changes inside `train.py`, explicit non-goals, runtime context, metric parsing,
 and the verification command. If those details are missing, `ooo auto` may
 correctly stop in Seed QA rather than running an under-specified experiment.
 It also writes an `autoresearch_contract` JSON block into `seed.md`,
-`auto_goal.txt`, and `handoff.json` so the generated Seed has exact values for
+`auto_goal.txt`, and `handoff.json` to request exact generated Seed values for
 the repository, editable files, fixed files, metric, experiment budget,
 candidate sequence, ledger, validity rules, runtime-owned Seed artifact policy,
 and the separate experiment timeout budget.
@@ -152,3 +166,9 @@ This plugin owns the autoresearch-specific workflow:
 `ooo auto` remains responsible for interview, Seed execution, ledger, and
 runtime orchestration. Ouroboros core remains domain-agnostic and does not need
 to understand neural-network research loops directly.
+
+The adapter writes these constraints and does not enforce experiment execution.
+A downstream runtime must preserve the contract in its saved Seed and enforce
+the budget, file limits, and explicit execution request. `prepare` never calls
+the training command. `--skip-run` prevents execution but can still invoke
+models while generating the Seed.
