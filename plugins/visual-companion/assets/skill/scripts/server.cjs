@@ -119,14 +119,8 @@ function wrapInFrame(content) {
 }
 
 function getNewestScreen() {
-  const files = fs.readdirSync(CONTENT_DIR)
-    .filter(f => f.endsWith('.html'))
-    .map(f => {
-      const fp = path.join(CONTENT_DIR, f);
-      return { path: fp, mtime: fs.statSync(fp).mtime.getTime() };
-    })
-    .sort((a, b) => b.mtime - a.mtime);
-  return files.length > 0 ? files[0].path : null;
+  const name = require('./current-screen.cjs')(STATE_DIR);
+  return name ? path.join(CONTENT_DIR, name) : null;
 }
 
 function screenInjection(screenFile) {
@@ -436,6 +430,8 @@ const debounceTimers = new Map();
 function startServer() {
   if (!fs.existsSync(CONTENT_DIR)) fs.mkdirSync(CONTENT_DIR, { recursive: true });
   if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true });
+  fs.chmodSync(STATE_DIR, 0o700);
+  fs.writeFileSync(path.join(STATE_DIR, 'session-token'), SESSION_TOKEN + '\n', { mode: 0o600 });
 
   // Track known files to distinguish new screens from updates.
   // macOS fs.watch reports 'rename' for both new files and overwrites,

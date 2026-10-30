@@ -14,6 +14,8 @@
 #   --foreground          Run server in the current terminal (no backgrounding).
 #   --background          Force background mode (overrides Codex auto-foreground).
 
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Parse arguments
@@ -74,13 +76,11 @@ if [[ "$FOREGROUND" != "true" && "$FORCE_BACKGROUND" != "true" ]]; then
   fi
 fi
 
-# Generate unique session directory
-SESSION_ID="$$-$(date +%s)"
-
 if [[ -n "$PROJECT_DIR" ]]; then
-  SESSION_DIR="${PROJECT_DIR}/.brainstorm/${SESSION_ID}"
+  mkdir -p "$PROJECT_DIR/.brainstorm"
+  SESSION_DIR="$(mktemp -d "$PROJECT_DIR/.brainstorm/session.XXXXXXXX")"
 else
-  SESSION_DIR="/tmp/brainstorm-${SESSION_ID}"
+  SESSION_DIR="$(mktemp -d "${TMPDIR:-/tmp}/brainstorm.XXXXXXXX")"
 fi
 
 STATE_DIR="${SESSION_DIR}/state"
@@ -89,13 +89,6 @@ LOG_FILE="${STATE_DIR}/server.log"
 
 # Create fresh session directory with content and state peers
 mkdir -p "${SESSION_DIR}/content" "$STATE_DIR"
-
-# Kill any existing server
-if [[ -f "$PID_FILE" ]]; then
-  old_pid=$(cat "$PID_FILE")
-  kill "$old_pid" 2>/dev/null
-  rm -f "$PID_FILE"
-fi
 
 cd "$SCRIPT_DIR"
 

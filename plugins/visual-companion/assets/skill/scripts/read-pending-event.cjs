@@ -48,9 +48,7 @@ function readJson(file) {
 function readEvents(eventsFile, type, sinceMs) {
   if (!fs.existsSync(eventsFile)) return [];
 
-  const markerPath = path.join(path.dirname(eventsFile), 'pending-question.json');
-  let screenId = null;
-  try { screenId = JSON.parse(fs.readFileSync(markerPath, 'utf8')).screenId; } catch {}
+  const screenId = require('./current-screen.cjs')(path.dirname(eventsFile));
   const seenEventIds = new Set();
   return fs.readFileSync(eventsFile, 'utf8')
     .split(/\n/)

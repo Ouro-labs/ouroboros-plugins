@@ -140,6 +140,16 @@ def main():
                     second = run("show", "--html", str(html), "--state-dir", str(state))
                     new_screen = Path(second["screen"]["path"]).name
                     assert new_screen != screen
+                    marker = (
+                        args.plugin_root.resolve()
+                        / "assets/skill/scripts/mark-pending-question.cjs"
+                    )
+                    marked = subprocess.run(
+                        ["node", str(marker), str(state), "--id", "durable"],
+                        capture_output=True,
+                        text=True,
+                    )
+                    assert marked.returncode == 0, marked.stderr
                     assert (
                         run("read", "--state-dir", str(state))["event"]["status"]
                         == "pending"
@@ -210,6 +220,37 @@ def main():
                     )
                 finally:
                     browser.close()
+            start_script = (
+                args.plugin_root.resolve() / "assets/skill/scripts/start-server.sh"
+            )
+            shell_start = subprocess.run(
+                ["bash", str(start_script), "--project-dir", str(root), "--background"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            assert shell_start.returncode == 0, shell_start.stderr
+            shell_info = json.loads(shell_start.stdout)
+            second_start = {
+                "state_dir": shell_info["state_dir"],
+                "session_dir": str(Path(shell_info["state_dir"]).parent),
+            }
+            second_state = Path(second_start["state_dir"])
+            (second_state / "server.pid").write_text(str(os.getpid()))
+            shell_stop = (
+                args.plugin_root.resolve() / "assets/skill/scripts/stop-server.sh"
+            )
+            shell = subprocess.run(
+                ["bash", str(shell_stop), second_start["session_dir"]],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert shell.returncode == 0, shell.stderr
+            assert json.loads(shell.stdout)["status"] == "stopped"
+            print(
+                "PASS shell stop uses session authentication despite a foreign PID in state"
+            )
             for path in (root / ".omx").rglob("*.json"):
                 assert token not in path.read_text(), path
             assert token not in (state / "server.log").read_text()
