@@ -1,6 +1,8 @@
 # Ouroboros Plugins
 
-UserLevel plugin ecosystem for Ouroboros.
+23 reference plugins <!-- maintainers: this count = `ls plugins/ | wc -l`; update it when adding/removing plugins --> for [Ouroboros](https://github.com/Q00/ouroboros), the Agent OS — autoresearch, github-pr-ops, guardrails-eval, langfuse-observability and more — plus the UserLevel plugin contract they are built against. Plugins compose the core's stable primitives into domain-specific workflows.
+
+New here? Install Ouroboros itself first — the [main repo's README](https://github.com/Q00/ouroboros#readme) covers install and setup. This repository is where the UserLevel plugin contract and reference plugin packages live.
 
 Ouroboros core should provide stable OS primitives. Plugins and first-party
 programs compose those primitives into domain-specific workflows.
@@ -101,6 +103,12 @@ Ouroboros `v0.39.1+` prompts for non-destructive required permissions during
 `plugin add`, so `autoresearch` can grant `filesystem:read` and
 `filesystem:write` during install. Destructive scopes, including PR write
 scopes, still require an explicit `plugin trust` command.
+
+For the full autoresearch workflow, including install, handoff preparation,
+`ouroboros auto` execution, and the `interview -> run -> evaluate -> reflect`
+boundary, see [`docs/autoresearch.md`](docs/autoresearch.md). A runnable
+dependency-free experiment lives in
+[`examples/autoresearch-char-lm`](examples/autoresearch-char-lm).
 
 
 ## OpenAI Skills Superpowers and AgentOS Capability Assimilation
