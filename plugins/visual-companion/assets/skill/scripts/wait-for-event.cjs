@@ -60,6 +60,9 @@ function parseArgs(argv) {
 function readEvents(eventsFile, args) {
   if (!fs.existsSync(eventsFile)) return [];
 
+  const markerPath = path.join(path.dirname(eventsFile), 'pending-question.json');
+  let screenId = null;
+  try { screenId = JSON.parse(fs.readFileSync(markerPath, 'utf8')).screenId; } catch {}
   const seenEventIds = new Set();
   return fs.readFileSync(eventsFile, 'utf8')
     .split(/\n/)
@@ -72,6 +75,7 @@ function readEvents(eventsFile, args) {
       }
     })
     .filter(Boolean)
+    .filter((event) => !screenId || event.screenId === screenId)
     .filter((event) => !args.type || event.type === args.type)
     .filter((event) => Number(event.timestamp || 0) >= args.sinceMs)
     .filter((event) => {
@@ -116,7 +120,10 @@ function appendDiagnostic(stateDir, action, detail = {}) {
 }
 
 function writePendingMarker(stateDir, args) {
+  let screenId = null;
+  try { screenId = JSON.parse(fs.readFileSync(path.join(stateDir, 'pending-question.json'), 'utf8')).screenId; } catch {}
   const pending = {
+    screenId,
     id: `automatic-bridge-${Date.now()}`,
     status: 'pending',
     type: args.type,

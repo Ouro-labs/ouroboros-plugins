@@ -123,7 +123,7 @@ class VisualCompanionPluginTests(unittest.TestCase):
 
                 req = urllib.request.Request(
                     f"{url}/__visual_companion_event",
-                    data=json.dumps({"type": "click", "choice": "a", "eventId": "test-event-1"}).encode("utf-8"),
+                    data=json.dumps({"type": "click", "choice": "a", "eventId": "test-event-1", "screenId": Path(json.loads(show.stdout)["screen"]["path"]).name}).encode("utf-8"),
                     headers={"Content-Type": "application/json", "x-visual-companion-token": token},
                     method="POST",
                 )

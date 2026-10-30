@@ -6,11 +6,12 @@ import argparse
 import json
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
 import uuid
+import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -258,7 +259,8 @@ def command_start(args: argparse.Namespace) -> CommandResult:
     content_dir = session_dir / "content"
     state_dir = session_dir / "state"
     content_dir.mkdir(parents=True, exist_ok=True)
-    state_dir.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state_dir.chmod(0o700)
 
     token = uuid.uuid4().hex + uuid.uuid4().hex[:16]
     env = os.environ.copy()
@@ -306,6 +308,8 @@ def command_start(args: argparse.Namespace) -> CommandResult:
             break
         time.sleep(0.1)
     if info is None:
+        proc.terminate()
+        proc.wait(timeout=5)
         return failed(command, "Visual companion server did not write server-info before timeout.", details={"pid": proc.pid, "log": safe_read(log_file)})
 
     session_info = {
@@ -318,6 +322,7 @@ def command_start(args: argparse.Namespace) -> CommandResult:
     }
     private_session_info = {**session_info, "token": token}
     (state_dir / "adapter-session.json").write_text(dumps(private_session_info) + "\n", encoding="utf-8")
+    (state_dir / "adapter-session.json").chmod(0o600)
     return completed(command, {"session": session_info, "artifacts": {"server_info": str(info_file), "log": str(log_file)}})
 
 
@@ -352,6 +357,8 @@ def command_show(args: argparse.Namespace) -> CommandResult:
     stem = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in (args.name or html.stem)).strip("-") or "screen"
     target = unique_html_path(content_dir, stem)
     shutil.copyfile(html, target)
+    marker = {"id": target.name, "screenId": target.name, "status": "pending", "sinceMs": int(time.time() * 1000)}
+    (state / "pending-question.json").write_text(dumps(marker) + "\n", encoding="utf-8")
     return completed(command, {"screen": {"source": str(html), "path": str(target), "state_dir": str(state), "session_dir": str(session)}})
 
 
@@ -413,63 +420,26 @@ def command_stop(args: argparse.Namespace) -> CommandResult:
     except (OSError, ValueError):
         return failed(command, "Invalid server pid file.", details={"pid_file": str(pid_file)})
 
-    stopped = terminate_pid(pid)
-    if stopped:
-        try:
-            pid_file.unlink()
-        except OSError:
-            pass
-        try:
-            (state / "server-info").unlink()
-        except OSError:
-            pass
-        (state / "server-stopped").write_text(dumps({"reason": "adapter stop", "timestamp": int(time.time() * 1000), "pid": pid}) + "\n", encoding="utf-8")
-        return completed(command, {"stop": {"status": "stopped", "pid": pid, "session_dir": str(session)}})
-    return failed(command, "Server process is still running after stop attempt.", details={"pid": pid, "session_dir": str(session)})
-
-
-def terminate_pid(pid: int) -> bool:
-    if pid <= 0:
-        return True
-    for sig in (signal.SIGTERM, signal.SIGTERM):
-        try:
-            os.kill(pid, sig)
-        except ProcessLookupError:
-            return True
-        except PermissionError:
-            return False
-        except OSError:
-            pass
-        for _ in range(20):
-            if not pid_alive(pid):
-                return True
-            time.sleep(0.1)
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True, check=False)
-    else:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return True
-        except OSError:
-            pass
-    for _ in range(20):
-        if not pid_alive(pid):
-            return True
-        time.sleep(0.1)
-    return not pid_alive(pid)
-
-
-def pid_alive(pid: int) -> bool:
+    private = read_json_file(state / "adapter-session.json")
+    if not private or not private.get("token") or private.get("pid") != pid:
+        return blocked(command, "Cannot authenticate the session owner; refusing to signal a pid.")
+    request = urllib.request.Request(
+        private["url"] + "/__visual_companion_stop", data=b"",
+        headers={"x-visual-companion-token": private["token"]}, method="POST",
+    )
     try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
+        with urllib.request.urlopen(request, timeout=5) as response:
+            if response.status != 202:
+                return failed(command, "Server refused shutdown.")
+    except (OSError, urllib.error.URLError):
+        if (state / "server-stopped").is_file():
+            return completed(command, {"stop": {"status": "not_running", "session_dir": str(session)}})
+        return blocked(command, "Session server is unreachable; no process was signalled.")
+    for _ in range(50):
+        if (state / "server-stopped").is_file() and not (state / "server-info").exists():
+            return completed(command, {"stop": {"status": "stopped", "session_dir": str(session)}})
+        time.sleep(0.1)
+    return failed(command, "Server did not confirm shutdown.")
 
 
 def build_parser() -> argparse.ArgumentParser:

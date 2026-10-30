@@ -101,6 +101,7 @@
   function sendEvent(event) {
     event.eventId = event.eventId || makeEventId();
     event.timestamp = Date.now();
+    event.screenId = window.__VISUAL_COMPANION_SCREEN;
     if (event.type !== 'heartbeat') {
       logDiagnostic('send-event', {
         eventId: event.eventId,
@@ -177,6 +178,7 @@
   document.addEventListener('click', (e) => {
     const trigger = e.target.closest('[data-submit]');
     if (!trigger) return;
+    e.preventDefault();
 
     const root = trigger.closest('[data-brainstorm-form]') || trigger.closest('.option, .card, .section') || document;
     sendEvent({

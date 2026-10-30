@@ -57,6 +57,7 @@ function decodeFrame(buffer) {
     offset = 10;
   }
 
+  if (payloadLen > 1024 * 1024) throw new Error('Frame too large');
   const maskOffset = offset;
   const dataOffset = offset + 4;
   const totalLen = dataOffset + payloadLen;
@@ -128,10 +129,30 @@ function getNewestScreen() {
   return files.length > 0 ? files[0].path : null;
 }
 
+function screenInjection(screenFile) {
+  return '<script>window.__VISUAL_COMPANION_SCREEN=' + JSON.stringify(screenFile ? path.basename(screenFile) : null) + ';</script>\n' + helperInjection;
+}
+
+let stopServer;
+
 // ========== HTTP Request Handler ==========
 
 function handleRequest(req, res) {
   touchActivity();
+  res.setHeader('Cache-Control', 'no-store');
+  const expectedHost = URL_HOST + ':' + PORT;
+  if (req.headers.host !== expectedHost && req.headers.host !== HOST + ':' + PORT) {
+    res.writeHead(403); res.end('Forbidden host'); return;
+  }
+  if (req.headers.origin && req.headers.origin !== 'http://' + req.headers.host) {
+    res.writeHead(403); res.end('Forbidden origin'); return;
+  }
+  if (req.method === 'POST' && req.url === '/__visual_companion_stop') {
+    if (!isAuthorizedRequest(req)) { rejectUnauthorized(res, 'stop'); return; }
+    res.writeHead(202); res.end('Stopping');
+    setImmediate(() => stopServer('adapter stop'));
+    return;
+  }
   if (req.method === 'GET' && req.url === '/') {
     const screenFile = getNewestScreen();
     let html = screenFile
@@ -139,9 +160,9 @@ function handleRequest(req, res) {
       : WAITING_PAGE;
 
     if (html.includes('</body>')) {
-      html = html.replace('</body>', helperInjection + '\n</body>');
+      html = html.replace('</body>', screenInjection(screenFile) + '\n</body>');
     } else {
-      html += helperInjection;
+      html += screenInjection(screenFile);
     }
 
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -242,6 +263,7 @@ function readJsonBody(req, res, callback) {
 const clients = new Set();
 
 function handleUpgrade(req, socket) {
+  if (req.headers.origin && req.headers.origin !== 'http://' + req.headers.host) { socket.destroy(); return; }
   const key = req.headers['sec-websocket-key'];
   if (!key) { socket.destroy(); return; }
   const parsedUrl = new URL(req.url || '/', 'http://localhost');
@@ -263,6 +285,7 @@ function handleUpgrade(req, socket) {
   clients.add(socket);
 
   socket.on('data', (chunk) => {
+    if (buffer.length + chunk.length > 1024 * 1024 + 14) { socket.destroy(); clients.delete(socket); return; }
     buffer = Buffer.concat([buffer, chunk]);
     while (buffer.length > 0) {
       let result;
@@ -341,11 +364,15 @@ function appendDiagnostic(action, detail = {}) {
 
 function recordEvent(event, transport) {
   touchActivity();
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return false;
+  const current = getNewestScreen();
+  if (!current || event.screenId !== path.basename(current)) return false;
+  if (typeof event.type !== 'string' || !event.type || typeof event.eventId !== 'string' || !event.eventId) return false;
   const normalizedEvent = {
+    ...event,
     source: 'browser',
     timestamp: Date.now(),
     transport,
-    ...event,
   };
   if (normalizedEvent.type === 'heartbeat') {
     return false;
@@ -445,7 +472,10 @@ function startServer() {
   });
   watcher.on('error', (err) => console.error('fs.watch error:', err.message));
 
+  let stopping = false;
   function shutdown(reason) {
+    if (stopping) return;
+    stopping = true;
     console.log(JSON.stringify({ type: 'server-stopped', reason }));
     const infoFile = path.join(STATE_DIR, 'server-info');
     if (fs.existsSync(infoFile)) fs.unlinkSync(infoFile);
@@ -454,9 +484,17 @@ function startServer() {
       JSON.stringify({ reason, timestamp: Date.now() }) + '\n'
     );
     watcher.close();
+    for (const timer of debounceTimers.values()) clearTimeout(timer);
+    for (const socket of clients) socket.destroy();
+    const pidFile = path.join(STATE_DIR, 'server.pid');
+    if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile);
     clearInterval(lifecycleCheck);
     server.close(() => process.exit(0));
   }
+
+  stopServer = shutdown;
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 
   function ownerAlive() {
     if (!ownerPid) return true;

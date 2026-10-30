@@ -60,3 +60,24 @@ should remain local-only.
 - The plugin does not automate a browser; it serves local pages and receives
   browser-originated events.
 - The plugin does not install Node or other runtime dependencies.
+
+## Session safety and verification
+
+Each published screen has a distinct identity. The bundled browser helper
+attaches it to events. The server rejects old-screen events and duplicate event
+IDs, and timestamps accepted events itself. Reads and waits select the current
+screen. Event and shutdown requests require the session token; cross-origin
+requests and unexpected Host headers are rejected.
+
+`stop` authenticates to the session server. It never signals a saved PID, so a
+stale PID file cannot terminate an unrelated process. An unreachable session
+without a shutdown marker returns blocked. Shutdown closes browser sockets and
+removes the active session markers. The private token file is readable only by
+its owner on POSIX systems. Screens are trusted agent-authored HTML with access
+to the browser token. Do not publish untrusted HTML or expose this local server
+to an untrusted network.
+
+To run the real Node and Chromium check, install Playwright and its Chromium
+browser in a development environment, then run
+`python scripts/verify_visual_companion_browser.py`. The check requires both
+dependencies and fails if either is unavailable. It makes no model calls.
